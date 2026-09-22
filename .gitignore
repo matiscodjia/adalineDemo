@@ -1,0 +1,8 @@
+__pycache__/
+*.py[oc]
+.venv
+rust/target/
+*.so
+.pytest_cache/
+.DS_Store
+.claude/

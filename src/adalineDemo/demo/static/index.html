@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Adaptive noise cancellation · frugal_ml</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main>
+  <header>
+    <h1><span>ADALINE</span> noise cancellation</h1>
+    <span class="pill">frugal_ml · Rust · no_std</span>
+  </header>
+  <p class="lede">One neuron, no hidden layer, trained one sample at a time — this is the
+    Widrow-Hoff LMS filter, run through <code>frugal_ml</code>'s generic <code>Linear</code> +
+    <code>mse</code> + <code>Sgd</code>. It learns to reconstruct a noise from a reference signal
+    correlated with it, and subtracts it. Listen to the difference, then see how much room to
+    spare it has on a $2 microcontroller.</p>
+
+  <div class="layout">
+    <section class="panel controls" aria-label="Controls">
+      <div class="field">
+        <div class="readout"><span class="label" style="margin:0">Filter length</span><span class="sub" id="taps-sub"></span></div>
+        <div class="readout"><span class="big" id="taps-big">16 taps</span></div>
+        <input type="range" id="taps" min="0" max="9" step="1" value="2" aria-label="Filter length">
+        <p class="note" id="taps-note"></p>
+      </div>
+      <div class="field">
+        <div class="readout"><span class="label" style="margin:0">Sample rate</span></div>
+        <div class="readout"><span class="big" id="fs-big">8 kHz</span></div>
+        <input type="range" id="fs" min="0" max="5" step="1" value="1" aria-label="Sample rate">
+        <p class="note" id="fs-note"></p>
+      </div>
+      <div class="field">
+        <div class="readout"><span class="label" style="margin:0">Learning rate</span><span class="sub" id="lr-sub"></span></div>
+        <div class="readout"><span class="big" id="lr-big">0.004</span></div>
+        <input type="range" id="lr" min="0" max="200" step="1" value="100" aria-label="Learning rate">
+        <p class="note" id="lr-note">Too low: converges slowly. Too high: overshoots and never settles.</p>
+      </div>
+      <div class="field">
+        <span class="label">Clip length</span>
+        <div class="seg" id="duration" role="group" aria-label="Clip length"></div>
+      </div>
+      <button class="btn" id="run" type="button">▶ Run</button>
+      <p class="runmsg" id="runmsg" role="status" aria-live="polite"></p>
+    </section>
+
+    <section class="stage">
+      <div class="row2">
+        <div class="panel margin-card">
+          <div class="top"><span class="label" style="margin:0">Real-time margin · STM32 chip</span><span class="pill" id="chip-pill"></span></div>
+          <div class="num" id="chip-num">—</div>
+          <div class="margin-track"><div class="margin-fill" id="chip-fill"></div><div class="margin-budget"></div></div>
+          <div class="margin-labels"><span id="chip-used"></span><span id="chip-budget"></span></div>
+        </div>
+        <div class="panel margin-card">
+          <div class="top"><span class="label" style="margin:0">Real-time margin · this computer</span><span class="pill ok">measured</span></div>
+          <div class="num" id="host-num">—</div>
+          <div class="margin-track"><div class="margin-fill" id="host-fill" style="background:var(--signal)"></div><div class="margin-budget"></div></div>
+          <div class="margin-labels"><span id="host-used"></span><span id="host-budget"></span></div>
+        </div>
+      </div>
+
+      <div class="panel chart-wrap">
+        <span class="label">Convergence, over the clip</span>
+        <svg id="chart" viewBox="0 0 620 180" role="img" aria-label="Correlation with the noise, and residual error, over time"></svg>
+        <div class="chart-legend">
+          <span><i style="background:var(--accent)"></i>correlation(y, noise) — 1.0 means the filter has fully learned the noise</span>
+          <span><i style="background:var(--noise);border-top:2px dashed var(--noise);height:0"></i>RMS(cancelled − clean signal) — lower is better</span>
+        </div>
+      </div>
+
+      <div class="panel" id="result">
+        <div class="empty" id="empty"><b>Pick your settings, then press Run.</b><br>You'll hear the noisy input, the cancelled output, and the clean signal underneath.</div>
+        <div id="filled" hidden style="display:grid;gap:14px">
+          <div class="audio">
+            <div class="clip noisy"><div class="name">Noisy<small>d[n] = signal + noise</small></div>
+              <div class="wave"><svg id="w-noisy" viewBox="0 0 800 46" preserveAspectRatio="none"></svg><audio id="a-noisy" controls></audio></div></div>
+            <div class="clip cancelled"><div class="name">Cancelled<small>e[n] = d[n] − y[n]</small></div>
+              <div class="wave"><svg id="w-cancelled" viewBox="0 0 800 46" preserveAspectRatio="none"></svg><audio id="a-cancelled" controls></audio></div></div>
+            <div class="clip clean"><div class="name">Clean<small>ground truth, only known in simulation</small></div>
+              <div class="wave"><svg id="w-clean" viewBox="0 0 800 46" preserveAspectRatio="none"></svg><audio id="a-clean" controls></audio></div></div>
+          </div>
+          <div class="metrics" id="metrics"></div>
+          <p class="hint" id="hint"></p>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <footer>
+    Signal: a 3-tone chord (<span id="f-signal"></span> Hz) to keep. Noise: a fundamental + 2 harmonics
+    (<span id="f-noise"></span> Hz, engine-like) to cancel, reaching the filter only through an unknown
+    2-tap coupling path — never directly. "This computer" is measured live, one <code>Linear</code> +
+    <code>mse</code> + <code>Sgd</code> step at a time. "STM32 chip" is a projection: <code>frugal_ml</code>'s
+    docs measured 575 cycles for exactly this filter at 16 taps on real hardware (DWT counter, over
+    ST-Link); other tap counts scale that line linearly, which is structurally justified (forward,
+    backward and the update are each one O(taps) pass, with a single output there is no O(taps²) term),
+    not curve-fit. Only 16 taps has actually run on the board.
+  </footer>
+</main>
+<script src="/static/app.js"></script>
+</body>
+</html>

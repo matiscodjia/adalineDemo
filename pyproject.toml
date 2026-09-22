@@ -1,0 +1,32 @@
+[project]
+name = "adalinedemo"
+version = "0.1.0"
+description = "Hear an ADALINE (LMS adaptive filter) cancel noise, live: frugal_ml's Rust core vs a numpy reference, with the same real-time margin measured on the STM32F446RE."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=2.0",
+]
+
+[project.scripts]
+adaline-demo = "adalineDemo.demo.server:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[tool.maturin]
+python-source = "src"
+module-name = "adalineDemo._native"
+manifest-path = "rust/Cargo.toml"
+
+[tool.uv]
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "rust/Cargo.toml" },
+    { file = "rust/src/**/*.rs" },
+    { file = "../../projects/frugal_ml/src/**/*.rs" },
+]
